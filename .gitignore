@@ -1,0 +1,14 @@
+# Node (demo)
+node_modules/
+*.log
+
+# Python (simulation)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

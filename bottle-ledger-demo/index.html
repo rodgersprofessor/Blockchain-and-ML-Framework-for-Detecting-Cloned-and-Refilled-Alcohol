@@ -1,0 +1,1286 @@
+<title>Bottle Ledger Demo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout concept: a ledger-book page. Narrow header, tab strip, then working panels that read like entries in a register.
+   Palette follows the paper's figures: deep green for the system, brick red for failures, ochre for weak signals. */
+:root {
+  --bg: #f5f7f3; --surface: #ffffff; --surface2: #edf2ee; --fg: #15231e; --muted: #56675f; --line: #d3dcd5;
+  --accent: #1f6b57; --accent-fg: #ffffff; --accent-soft: #dcede6;
+  --bad: #b03a1e; --bad-soft: #f7e3dc; --warn: #7d6000; --warn-soft: #f5edcf; --good: #1f6b57; --good-soft: #dcede6;
+  --s1: #7a7262; --s2: #c08700; --s3: #1f6b57;
+  --font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1613; --surface: #16201c; --surface2: #1c2a25; --fg: #e3ece7; --muted: #9ab0a6; --line: #2a3a33;
+  --accent: #5ac6a4; --accent-fg: #06231a; --accent-soft: #1a3a30;
+  --bad: #ff8d6e; --bad-soft: #3a211b; --warn: #e6c14d; --warn-soft: #352d12; --good: #5ac6a4; --good-soft: #1a3a30;
+  --s1: #a8a090; --s2: #e0a92c; --s3: #5ac6a4; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f1613; --surface: #16201c; --surface2: #1c2a25; --fg: #e3ece7; --muted: #9ab0a6; --line: #2a3a33;
+  --accent: #5ac6a4; --accent-fg: #06231a; --accent-soft: #1a3a30;
+  --bad: #ff8d6e; --bad-soft: #3a211b; --warn: #e6c14d; --warn-soft: #352d12; --good: #5ac6a4; --good-soft: #1a3a30;
+  --s1: #a8a090; --s2: #e0a92c; --s3: #5ac6a4; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.5; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 56px; }
+.wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+h1 { font-size: 26px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; font-weight: 600; text-wrap: balance; }
+h2 { font-size: 17px; margin: 0; font-weight: 600; }
+h3 { font-size: 13px; margin: 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+p { margin: 0; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+header { display: flex; flex-direction: column; gap: 8px; }
+.sub { color: var(--muted); max-width: 70ch; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; background: var(--surface2); border: 1px solid var(--line); color: var(--muted); width: fit-content; }
+.pill.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.pill.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+
+nav[role=tablist] { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav button { font: inherit; font-weight: 500; background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+nav button[aria-selected=true] { color: var(--fg); border-bottom-color: var(--accent); }
+nav button:hover { color: var(--fg); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+section.panel { display: flex; flex-direction: column; gap: 18px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.grid { display: grid; gap: 16px; }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .g5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g3 { grid-template-columns: 1fr; } .split, .g2 { grid-template-columns: 1fr; } }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+button.btn { font: inherit; font-weight: 500; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+button.btn:hover { background: var(--surface2); }
+button.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.btn.primary:hover { filter: brightness(1.08); }
+button.btn.danger { color: var(--bad); border-color: var(--bad); }
+button.btn:disabled { opacity: 0.5; cursor: default; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+label.f b { color: var(--fg); font-weight: 500; font-size: 14px; }
+select, input[type=number], input[type=text] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); width: 100%; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+label.chk { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+label.chk input { margin-top: 4px; accent-color: var(--accent); }
+
+.peer { display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.peer b { font-size: 15px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-family: var(--mono); font-size: 11.5px; padding: 1px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+.chip.red { background: var(--bad-soft); color: var(--bad); }
+.chip.amber { background: var(--warn-soft); color: var(--warn); }
+.chip.grey { background: var(--surface2); color: var(--muted); }
+
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr.click { cursor: pointer; }
+tbody tr.click:hover { background: var(--surface2); }
+tbody tr.sel { background: var(--accent-soft); }
+.scroll { overflow-x: auto; max-width: 100%; }
+pre.json { margin: 0; padding: 12px; background: var(--surface2); border-radius: 6px; overflow: auto; max-height: 280px; font-family: var(--mono); font-size: 12px; line-height: 1.45; }
+
+.scen { display: flex; flex-direction: column; gap: 6px; }
+.scen label { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--surface); }
+.scen label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.scen input { margin-top: 3px; accent-color: var(--accent); }
+.scen b { font-weight: 500; display: block; }
+.scen span { color: var(--muted); font-size: 13px; }
+
+.phone { border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 8px; background: var(--surface2); max-width: 360px; }
+.verdict { border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.verdict.good { background: var(--good-soft); color: var(--good); }
+.verdict.bad { background: var(--bad-soft); color: var(--bad); }
+.verdict.quiet { background: var(--surface); color: var(--fg); border: 1px solid var(--line); }
+.verdict b { font-size: 17px; }
+.steps { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+.steps li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.steps li:last-child { border-bottom: 0; }
+.mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--good-soft); color: var(--good); }
+.mark.no { background: var(--bad-soft); color: var(--bad); }
+.mark.skip { background: var(--surface2); color: var(--muted); }
+.steps b { font-weight: 500; }
+.steps span { color: var(--muted); font-size: 13px; display: block; }
+
+.kpi { display: flex; flex-direction: column; gap: 2px; }
+.kpi b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.kpi span { font-size: 12.5px; color: var(--muted); }
+svg text { fill: var(--muted); font-family: var(--font); }
+svg.chart { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.bar { display: grid; grid-template-columns: 170px 1fr 52px; gap: 8px; align-items: center; font-size: 13px; }
+.bar > div.track { height: 10px; background: var(--surface2); border-radius: 3px; position: relative; }
+.bar > div.track i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+@media (max-width: 520px) { .bar { grid-template-columns: 120px 1fr 44px; } }
+progress { width: 100%; accent-color: var(--accent); height: 8px; }
+.note { border-left: 3px solid var(--warn); background: var(--warn-soft); color: var(--fg); padding: 10px 12px; border-radius: 0 6px 6px 0; font-size: 13.5px; }
+ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+footer { color: var(--muted); font-size: 13px; }
+@media (prefers-reduced-motion: no-preference) { .verdict { animation: pop .18s ease-out; } @keyframes pop { from { transform: translateY(4px); opacity: .4; } to { transform: none; opacity: 1; } } }
+
+.tl { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 14px; }
+.tl li { position: relative; display: flex; flex-direction: column; gap: 4px; padding-left: 14px; }
+.tl li::before { content: ""; position: absolute; left: -22px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+.tl li.bad::before { background: var(--bad); } .tl li.weak::before { background: var(--s2); } .tl li.plain::before { background: var(--s1); }
+.tl .when { font-size: 12.5px; color: var(--muted); }
+button.link { font: inherit; font-size: 12.5px; background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Bottle Ledger Demo</h1>
+    <p class="sub">A working model of the four-layer framework in the draft paper: tamper-evident NFC closures bound to excise stamps, a permissioned ledger signed by several agencies, the four VerifyScan checks, and risk-ranked inspections.</p>
+    <span class="pill warn">Illustrative model on synthetic data. It is not the paper's 1,500-outlet agent-based model.</span>
+  </header>
+
+  <nav role="tablist" aria-label="Demo sections">
+    <button role="tab" id="t-ledger" aria-selected="true" aria-controls="p-ledger">1 Ledger</button>
+    <button role="tab" id="t-tap" aria-selected="false" aria-controls="p-tap">2 Tap lab</button>
+    <button role="tab" id="t-trail" aria-selected="false" aria-controls="p-trail">3 Follow a bottle</button>
+    <button role="tab" id="t-sim" aria-selected="false" aria-controls="p-sim">4 Regulator simulation</button>
+  </nav>
+
+  <!-- ================= LEDGER ================= -->
+  <section class="panel" id="p-ledger" role="tabpanel" aria-labelledby="t-ledger">
+    <div class="card">
+      <h3>Consortium peers</h3>
+      <div class="grid g5" id="peers"></div>
+      <p class="small muted">Every block needs valid signatures from at least 3 of the 5 peers. Each peer signs with its own key; here an HMAC stands in for the X.509/ECDSA identities a Hyperledger Fabric network would use.</p>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h3>Chain</h3>
+        <div class="row" id="chain-stats"></div>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="btn-verify">Verify chain</button>
+        <button class="btn danger" id="btn-tamper">Alter a recorded transfer</button>
+        <button class="btn danger" id="btn-forge">Rewrite it and re-sign with one peer key</button>
+        <button class="btn" id="btn-restore">Restore</button>
+      </div>
+      <div id="verify-out" class="small" aria-live="polite"></div>
+      <div class="scroll"><table><thead><tr><th class="num">#</th><th class="num">Week</th><th>Contents</th><th>Hash</th><th>Signed by</th></tr></thead><tbody id="blocks"></tbody></table></div>
+      <div class="row small muted"><span id="blocks-note"></span><button class="btn" id="btn-more" style="padding:4px 10px">Show 20 more</button></div>
+      <div id="block-detail"></div>
+    </div>
+
+    <div class="card">
+      <h3>Smart contracts and which peers must sign</h3>
+      <div class="scroll"><table><thead><tr><th>Contract</th><th>Writes</th><th>Required signers</th><th class="num">Records on chain</th></tr></thead><tbody id="contracts"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ================= TAP LAB ================= -->
+  <section class="panel" id="p-tap" role="tabpanel" aria-labelledby="t-tap" hidden>
+    <div class="split">
+      <div class="card">
+        <h3>Choose what is on the shelf</h3>
+        <div class="scen" id="scen"></div>
+        <div class="card" style="padding:12px; background: var(--surface2); border: 0">
+          <label class="chk"><input type="checkbox" id="opt-sun"><span><b>Signed rolling-counter tags</b><br><span class="muted small">Extension, not in the draft. Each tap carries a signature and a counter, so a copied tag cannot answer. Tags such as NXP NTAG 424 DNA work this way.</span></span></label>
+          <label class="chk"><input type="checkbox" id="opt-sup" checked><span><b>Suppress repeat-scan warnings</b><br><span class="muted small">An opened bottle tapped again at its own outlet is logged as a weak signal. Table 4 as written would warn on it; Section 7.6 recommends this grading.</span></span></label>
+        </div>
+        <div class="row"><button class="btn primary" id="btn-tap">Tap the bottle</button><span class="small muted" id="tap-where"></span></div>
+        <p class="small note" id="tap-warn" hidden></p>
+      </div>
+      <div class="card" id="tap-result">
+        <p class="muted">Pick a scenario and tap. The checks run against the live ledger state and the scan is written to a new block.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TRAIL ================= -->
+  <section class="panel" id="p-trail" role="tabpanel" aria-labelledby="t-trail" hidden>
+    <div class="card">
+      <h3>Follow one bottle through the ledger</h3>
+      <p class="small muted">Enter a bottle code or pick one. The trail is read from the chain itself: the batch that registered the bottle, the case transfer that moved it, and every scan, with the verdict each scan produced at the time.</p>
+      <div class="row">
+        <input type="text" id="trail-code" class="mono" style="max-width: 200px" placeholder="K1-1788" aria-label="Bottle code" autocomplete="off" spellcheck="false">
+        <button class="btn primary" id="btn-trail">Follow</button>
+        <button class="btn" data-pick="one">A scanned bottle</button>
+        <button class="btn" data-pick="multi">Scanned at two outlets</button>
+        <button class="btn" data-pick="open">Reported opened</button>
+      </div>
+    </div>
+    <div id="trail-out" aria-live="polite"></div>
+  </section>
+
+  <!-- ================= SIM ================= -->
+  <section class="panel" id="p-sim" role="tabpanel" aria-labelledby="t-sim" hidden>
+    <div class="card">
+      <h3>Scenario settings</h3>
+      <div class="grid g3">
+        <label class="f"><b>Regime for the live run</b>
+          <select id="s-regime"><option value="S1">S1  Excise stamps only</option><option value="S2">S2  Ledger + rule-based alerts</option><option value="S3" selected>S3  Ledger + ML targeting</option></select></label>
+        <label class="f"><b>Outlets: <span id="v-n">300</span></b><input type="range" id="s-n" min="100" max="600" step="50" value="300"></label>
+        <label class="f"><b>Inspections per week: <span id="v-cap">6</span></b><input type="range" id="s-cap" min="1" max="15" value="6"></label>
+        <label class="f"><b>Consumers who scan: <span id="v-scan">8</span>%</b><input type="range" id="s-scan" min="1" max="20" value="8"></label>
+        <label class="f"><b>Weeks to run: <span id="v-weeks">26</span></b><input type="range" id="s-weeks" min="12" max="52" step="2" value="26"></label>
+        <label class="f"><b>Random seed</b><input type="number" id="s-seed" value="7" min="1" max="9999"></label>
+      </div>
+      <div class="grid g3">
+        <label class="chk"><input type="checkbox" id="s-tools" checked><span>Inspectors check bottles against the ledger on site</span></label>
+        <label class="chk"><input type="checkbox" id="s-sun"><span>Signed rolling-counter tags (extension)</span></label>
+        <label class="chk"><input type="checkbox" id="s-sup" checked><span>Suppress repeat-scan warnings</span></label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="btn-run">Run live (writes to the ledger)</button>
+        <button class="btn" id="btn-compare">Compare S1, S2, S3</button>
+        <label class="f" style="flex-direction:row; align-items:center; gap:8px">Replications <select id="s-reps" style="width:auto"><option>1</option><option selected>5</option><option>10</option></select></label>
+      </div>
+      <progress id="prog" value="0" max="1" hidden></progress>
+      <p class="small muted" id="prog-text"></p>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content: space-between"><h3 id="chart-title">Counterfeit share of branded sales, by week</h3><div class="legend" id="legend"></div></div>
+      <svg class="chart" id="chart" viewBox="0 0 760 280" role="img" aria-label="Counterfeit share by week"></svg>
+      <p class="small muted" id="chart-note">Press a run button to draw the chart.</p>
+    </div>
+
+    <div class="card" id="metrics-card" hidden>
+      <h3>Outcomes</h3>
+      <div class="scroll"><table id="metrics"></table></div>
+      <p class="small" id="metrics-read"></p>
+    </div>
+
+    <div class="split" id="live-card" hidden>
+      <div class="card">
+        <div class="row" style="justify-content: space-between"><h3>Outlet map, live run</h3>
+          <label class="chk small"><input type="checkbox" id="m-truth"><span>Reveal counterfeit outlets</span></label></div>
+        <svg class="chart" id="map" viewBox="0 0 400 400" role="img" aria-label="Map of outlets coloured by risk score" style="background: var(--surface2); border-radius: 6px"></svg>
+        <div class="legend small"><span><i style="background: var(--s1); height:10px; width:10px; border-radius:50%"></i>low risk</span><span><i style="background: var(--bad); height:10px; width:10px; border-radius:50%"></i>high risk</span><span><i style="border:2px solid var(--accent); background:none; height:10px; width:10px; border-radius:50%"></i>inspected this week</span><span><i style="border:2px solid var(--fg); background:none; height:10px; width:10px; border-radius:50%"></i>counterfeit (revealed)</span></div>
+      </div>
+      <div class="card">
+        <h3>This week's inspection queue</h3>
+        <div class="scroll"><table><thead><tr><th>Outlet</th><th>Why chosen</th><th>Result</th></tr></thead><tbody id="queue"></tbody></table></div>
+        <h3 style="margin-top:6px">What the risk model learned</h3>
+        <div id="weights"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p><b>What this demo does not do.</b> It does not run a consensus protocol: blocks are signed by a quorum of peers but not ordered by Raft or PBFT, and the peers share one process. Isolation Forest and logistic regression are small JavaScript versions, not the scikit-learn models in the paper. The market is 100 to 600 outlets over 400 km by 400 km, with assumed parameters, so use it to see the mechanisms, not to quote effect sizes.</p>
+  </footer>
+</div>
+
+<script>
+/* ===== Engine: ledger, VerifyScan, risk model, weekly simulation =====
+   Pure JS, no DOM. Works in browsers (Web Crypto) and Node 18+. */
+const Engine = (() => {
+'use strict';
+
+/* ---------- utilities ---------- */
+const enc = new TextEncoder();
+const subtle = (globalThis.crypto && globalThis.crypto.subtle) || (typeof require !== 'undefined' ? require('node:crypto').webcrypto.subtle : undefined);
+const hex = buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+async function sha256(str) { return hex(await subtle.digest('SHA-256', enc.encode(str))); }
+async function hmac(keyHex, msg) {
+  const k = await subtle.importKey('raw', enc.encode(keyHex), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return hex(await subtle.sign('HMAC', k, enc.encode(msg)));
+}
+function hash32(...parts) { // small string hash for sub-seeds
+  let h = 2166136261;
+  for (const c of parts.join('|')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const subRng = (seed, ...keys) => mulberry32(hash32(seed, ...keys));
+function randn(r) { let u = 0, v = 0; while (!u) u = r(); v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function poisson(r, lam) {
+  if (lam > 30) return Math.max(0, Math.round(lam + Math.sqrt(lam) * randn(r)));
+  const L = Math.exp(-lam); let k = 0, p = 1;
+  do { k++; p *= r(); } while (p > L);
+  return k - 1;
+}
+const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+
+/* ---------- ledger ---------- */
+const PEERS = [
+  { id: 'KRA', name: 'Kenya Revenue Authority', short: 'KRA' },
+  { id: 'ACA', name: 'Anti-Counterfeit Authority', short: 'ACA' },
+  { id: 'KEBS', name: 'Kenya Bureau of Standards', short: 'KEBS' },
+  { id: 'BRAND', name: 'Brand owner (Kestrel Spirits)', short: 'Brand' },
+  { id: 'DIST', name: 'Distributors consortium', short: 'Distrib.' },
+];
+const QUORUM = 3; // majority of 5 peers must sign every block
+const REQUIRED = { MintBatch: ['BRAND', 'KRA'], Transfer: ['DIST'], VerifyScan: ['KRA'], Decommission: ['KEBS'], FlagOutlet: ['ACA', 'KRA'] };
+
+class Chain {
+  constructor() { this.blocks = []; this.keys = {}; this.ready = this.init(); }
+  async init() {
+    for (const p of PEERS) this.keys[p.id] = await sha256('demo-peer-secret/' + p.id);
+    this.genesis = '0'.repeat(64);
+  }
+  signersFor(txs) {
+    const s = new Set();
+    for (const t of txs) for (const p of (REQUIRED[t.t] || [])) s.add(p);
+    for (const p of PEERS) { if (s.size >= QUORUM) break; s.add(p.id); }
+    return [...s];
+  }
+  async append(txs, week) {
+    await this.ready;
+    const prev = this.blocks.length ? this.blocks[this.blocks.length - 1].hash : this.genesis;
+    const header = { index: this.blocks.length, week, prev, txRoot: await sha256(JSON.stringify(txs)) };
+    const hash = await sha256(JSON.stringify(header));
+    const sigs = {};
+    for (const p of this.signersFor(txs)) sigs[p] = await hmac(this.keys[p], hash);
+    const block = { ...header, hash, txs, sigs };
+    this.blocks.push(block);
+    return block;
+  }
+  async verify() {
+    await this.ready;
+    let prev = this.genesis;
+    for (const b of this.blocks) {
+      const header = { index: b.index, week: b.week, prev: b.prev, txRoot: await sha256(JSON.stringify(b.txs)) };
+      if (b.prev !== prev) return { ok: false, index: b.index, reason: 'Link to the previous block is broken.' };
+      if (header.txRoot !== b.txRoot) return { ok: false, index: b.index, reason: 'Transactions no longer match the signed transaction root.' };
+      const h = await sha256(JSON.stringify(header));
+      if (h !== b.hash) return { ok: false, index: b.index, reason: 'Block hash does not match its header.' };
+      let good = 0;
+      for (const p of Object.keys(b.sigs)) if (b.sigs[p] === await hmac(this.keys[p], b.hash)) good++;
+      if (good < QUORUM) return { ok: false, index: b.index, reason: `Only ${good} valid peer signatures; ${QUORUM} of ${PEERS.length} are required.` };
+      prev = b.hash;
+    }
+    return { ok: true, index: -1, reason: `${this.blocks.length} blocks checked: hashes link, ${QUORUM}+ valid peer signatures on each.` };
+  }
+}
+
+/* ---------- world state (derived from transactions) ---------- */
+const codeOf = (batch, serial) => `K${batch}-${serial}`;
+const caseOf = (batch, serial) => `C${batch}-${Math.floor(serial / 12)}`;
+function parseCode(code) {
+  const m = /^K(\d+)-(\d+)$/.exec(code);
+  return m ? { batch: +m[1], serial: +m[2] } : null;
+}
+class World {
+  constructor() { this.batches = {}; this.cases = {}; this.bottles = {}; this.flags = []; this.deliveries = {}; }
+  apply(tx) {
+    switch (tx.t) {
+      case 'MintBatch': this.batches[tx.batch] = { count: tx.count, brand: tx.brand, week: tx.w }; break;
+      case 'Transfer':
+        this.cases[tx.case] = { custodian: tx.to, w: tx.w };
+        (this.deliveries[tx.to] ||= {})[tx.w] = (this.deliveries[tx.to][tx.w] || 0) + 12;
+        break;
+      case 'VerifyScan': {
+        const b = (this.bottles[tx.code] ||= { scans: [], opened: false, decom: false });
+        b.scans.push({ o: tx.o, w: tx.w });
+        if (tx.tagOpen) b.opened = true;
+        break;
+      }
+      case 'Decommission': (this.bottles[tx.code] ||= { scans: [], opened: false, decom: false }).decom = true; break;
+      case 'FlagOutlet': this.flags.push(tx); break;
+    }
+  }
+  custodian(code) {
+    const p = parseCode(code); if (!p) return null;
+    const c = this.cases[caseOf(p.batch, p.serial)];
+    return c ? c.custodian : 'DIST';
+  }
+}
+
+/* ---------- VerifyScan: the four checks (plus optional tag authentication) ----------
+   scan = { code, outlet, tagOpen, authOK }   opts = { sun, suppressRepeat, dist(a,b) } */
+function verifyScan(W, scan, opts) {
+  const f = { c0: false, c1: false, c2: false, c2same: false, c3: false, c3same: false, c4: false, dist: 0 };
+  const trace = [];
+  const done = (verdict, strong, shown, headline) => ({ flags: f, trace, verdict, strong, shown, headline });
+
+  if (opts.sun) {
+    if (scan.authOK === false) {
+      f.c0 = true;
+      trace.push({ n: 0, name: 'Tag authentication (signed rolling counter)', pass: false, detail: 'The tag message failed its signature or counter check. A copied tag cannot produce a fresh signed message.' });
+      return done('cloned-tag', true, true, 'Tag failed authentication');
+    }
+    trace.push({ n: 0, name: 'Tag authentication (signed rolling counter)', pass: true, detail: 'Signature valid and counter is higher than any seen before.' });
+  }
+
+  const p = parseCode(scan.code);
+  const reg = p && W.batches[p.batch] && p.serial < W.batches[p.batch].count;
+  if (!reg) {
+    f.c1 = true;
+    trace.push({ n: 1, name: 'Is the code registered?', pass: false, detail: 'No MintBatch record contains this code.' });
+    return done('fake', true, true, 'Fake code: not registered');
+  }
+  trace.push({ n: 1, name: 'Is the code registered?', pass: true, detail: `Registered in batch ${p.batch}.` });
+
+  const b = W.bottles[scan.code];
+  const custody = W.custodian(scan.code);
+  if (b && b.decom) {
+    f.c2 = true;
+    trace.push({ n: 2, name: 'Opened or decommissioned?', pass: false, detail: 'The ledger records this bottle as an empty that was collected and decommissioned.' });
+    return done('refill', true, true, 'Refill suspect: bottle was decommissioned');
+  }
+  if (scan.tagOpen) {
+    f.c2 = true;
+    if (custody === scan.outlet && opts.suppressRepeat) {
+      f.c2same = true;
+      trace.push({ n: 2, name: 'Opened or decommissioned?', pass: false, detail: 'Tag reports opened, but the bottle is at its registered outlet. Treated as a repeat scan: weak signal, no consumer warning.' });
+      return done('repeat', false, false, 'Repeat scan of an opened bottle (not shown)');
+    }
+    trace.push({ n: 2, name: 'Opened or decommissioned?', pass: false, detail: custody === scan.outlet ? 'Tag reports opened.' : `Tag reports opened and the bottle belongs to ${custody}, not here.` });
+    return done('refill', true, true, 'Refill suspect: closure already opened');
+  }
+  trace.push({ n: 2, name: 'Opened or decommissioned?', pass: true, detail: 'Closure sealed; bottle not decommissioned.' });
+
+  const prior = b ? b.scans : [];
+  const elsewhere = prior.find(s => s.o !== scan.outlet);
+  if (elsewhere) {
+    f.c3 = true;
+    trace.push({ n: 3, name: 'Scanned before?', pass: false, detail: `Already scanned at ${elsewhere.o} in week ${elsewhere.w}. The same sealed code cannot be in two places.` });
+    return done('clone', true, true, 'Clone suspect: code already scanned elsewhere');
+  }
+  if (prior.length) {
+    f.c3same = true;
+    trace.push({ n: 3, name: 'Scanned before?', pass: true, detail: 'Scanned before at this same outlet: weak signal only.' });
+  } else trace.push({ n: 3, name: 'Scanned before?', pass: true, detail: 'First scan of this code.' });
+
+  if (custody && custody !== scan.outlet) {
+    f.c4 = true; f.dist = opts.dist ? opts.dist(custody, scan.outlet) : 0;
+    trace.push({ n: 4, name: 'At its custody outlet?', pass: false, detail: `Custody record says ${custody}; scanned at ${scan.outlet}${f.dist ? ` (${f.dist.toFixed(0)} km apart)` : ''}. Weak signal, weighted by distance.` });
+    return done('mismatch', false, false, 'Custody mismatch (weak signal, not shown)');
+  }
+  trace.push({ n: 4, name: 'At its custody outlet?', pass: true, detail: `Custody record says ${custody}.` });
+  return done('genuine', false, true, 'Genuine');
+}
+
+/* ---------- risk model ---------- */
+const FEATURES = ['Opened-tag rate', 'Mismatch distance', 'Invalid codes', 'Delivery ratio', 'Change in mismatch rate', 'Custody-mismatch rate', 'Outlet type (bar)', 'Duplicate rate'];
+
+function cFn(n) { return n > 2 ? 2 * (Math.log(n - 1) + 0.5772156649) - 2 * (n - 1) / n : (n === 2 ? 1 : 0); }
+function buildTree(X, idx, depth, limit, r) {
+  if (depth >= limit || idx.length <= 1) return { size: idx.length };
+  const d = Math.floor(r() * X[0].length);
+  let mn = Infinity, mx = -Infinity;
+  for (const i of idx) { const v = X[i][d]; if (v < mn) mn = v; if (v > mx) mx = v; }
+  if (mx === mn) return { size: idx.length };
+  const sp = mn + r() * (mx - mn);
+  const L = [], R = [];
+  for (const i of idx) (X[i][d] < sp ? L : R).push(i);
+  return { d, sp, l: buildTree(X, L, depth + 1, limit, r), r: buildTree(X, R, depth + 1, limit, r) };
+}
+const pathLen = (nd, x, depth) => nd.size !== undefined ? depth + cFn(nd.size) : pathLen(x[nd.d] < nd.sp ? nd.l : nd.r, x, depth + 1);
+function isolationScores(X, r, trees = 100) {
+  const n = X.length, psi = Math.min(64, n), limit = Math.ceil(Math.log2(psi));
+  const forest = [];
+  for (let t = 0; t < trees; t++) {
+    const idx = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    forest.push(buildTree(X, idx.slice(0, psi), 0, limit, r));
+  }
+  return X.map(x => Math.pow(2, -mean(forest.map(t => pathLen(t, x, 0))) / cFn(psi)));
+}
+function percentiles(a) {
+  const order = a.map((v, i) => [v, i]).sort((p, q) => p[0] - q[0]);
+  const out = new Array(a.length);
+  order.forEach(([, i], rank) => { out[i] = a.length > 1 ? rank / (a.length - 1) : 0.5; });
+  return out;
+}
+function trainLR(data) { // balanced class weights, L2, standardised inputs
+  const d = data[0].x.length;
+  const mu = Array(d).fill(0), sd = Array(d).fill(0);
+  data.forEach(s => s.x.forEach((v, j) => mu[j] += v / data.length));
+  data.forEach(s => s.x.forEach((v, j) => sd[j] += (v - mu[j]) ** 2 / data.length));
+  for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j]) || 1;
+  const pos = data.filter(s => s.y === 1).length, neg = data.length - pos;
+  const wp = data.length / (2 * pos), wn = data.length / (2 * neg);
+  const w = Array(d).fill(0); let b0 = 0;
+  for (let it = 0; it < 400; it++) {
+    const g = Array(d).fill(0); let gb = 0;
+    for (const s of data) {
+      const z = b0 + s.x.reduce((a, v, j) => a + w[j] * (v - mu[j]) / sd[j], 0);
+      const pr = 1 / (1 + Math.exp(-z)), cw = s.y ? wp : wn, e = (pr - s.y) * cw;
+      gb += e; for (let j = 0; j < d; j++) g[j] += e * (s.x[j] - mu[j]) / sd[j];
+    }
+    b0 -= 0.2 * gb / data.length;
+    for (let j = 0; j < d; j++) w[j] -= 0.2 * (g[j] / data.length + 0.01 * w[j]);
+  }
+  return { w, b0, mu, sd };
+}
+const predictLR = (m, x) => 1 / (1 + Math.exp(-(m.b0 + x.reduce((a, v, j) => a + m.w[j] * (v - m.mu[j]) / m.sd[j], 0))));
+
+/* ---------- weekly simulation ---------- */
+const METHODS = ['fake', 'clone', 'refill'];
+const DEFAULTS = {
+  seed: 7, nOutlets: 120, regime: 'S3', scanRate: 0.08, cap: 3, ledgerTools: true,
+  sun: false, suppress: true, closureRel: 0.9, informal: 0.03, warmup: 3, meanBottles: 30,
+};
+
+class Sim {
+  constructor(opts = {}, chain = null) {
+    this.o = Object.assign({}, DEFAULTS, opts);
+    this.chain = chain;
+    this.W = new World();
+    this.week = 0;
+    this.serial = {};            // batch -> next serial
+    this.soldCodes = [];         // {code, outlet}
+    this.scanLog = {};           // outlet -> [{w, f, strong, shown, cf}]
+    this.nets = []; this.infs = [];
+    this.cool = {};              // outlet -> week until which re-infiltration is blocked
+    this.lastInsp = {};
+    this.tips = new Set(); this.linked = new Set();
+    this.train = []; this.lrModel = null; this.lrWeek = -99;
+    this.series = []; this.removed = []; this.totalCfSold = 0;
+    this.inspectionsTotal = 0; this.foundTotal = 0;
+    this.lastQueue = []; this.lastRisk = {};
+    this.pendingTx = [];
+    this.blockLog = [];
+    this.stats = { cfScans: 0, cfWarned: 0, gScans: 0, gWarned: 0 };
+    this.makeOutlets();
+  }
+
+  makeOutlets() {
+    const r = subRng(this.o.seed, 'outlets'), n = this.o.nOutlets;
+    const centers = Array.from({ length: 8 }, () => [40 + r() * 320, 40 + r() * 320]);
+    this.outlets = Array.from({ length: n }, (_, i) => {
+      const c = centers[i % 8];
+      const x = Math.min(395, Math.max(5, c[0] + randn(r) * 22)), y = Math.min(395, Math.max(5, c[1] + randn(r) * 22));
+      return {
+        id: 'O' + String(i + 1).padStart(3, '0'), i, x, y, county: (i % 8) + 1,
+        bar: r() < 0.4, mean: Math.exp(Math.log(this.o.meanBottles) + 0.5 * randn(r) - 0.125),
+        scanMult: Math.exp(0.6 * randn(r) - 0.18),
+      };
+    });
+    this.byId = Object.fromEntries(this.outlets.map(o => [o.id, o]));
+    this.outlets.forEach(o => {
+      o.near = this.outlets.filter(p => p !== o).map(p => [this.d(o, p), p]).sort((a, b) => a[0] - b[0]).slice(0, 4).map(a => a[1]);
+      this.scanLog[o.id] = [];
+    });
+    this.opts_ = { dist: (a, b) => (this.byId[a] && this.byId[b]) ? this.d(this.byId[a], this.byId[b]) : 0 };
+  }
+  d(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  vopts() { return { sun: this.o.sun, suppressRepeat: this.o.suppress, dist: this.opts_.dist }; }
+  emit(tx) { this.W.apply(tx); this.pendingTx.push(tx); }
+
+  /* ----- one week ----- */
+  step() {
+    const w = this.week, o = this.o, regime = o.regime, ledgerOn = regime !== 'S1';
+    const rNet = subRng(o.seed, 'net', w), rInsp = subRng(o.seed, 'insp', w);
+    const warm = w < o.warmup;
+    this.pendingTx = [];
+
+    /* networks arrive and recruit */
+    if (!warm) {
+      const arrivals = (w === o.warmup ? 3 : 0) + (rNet() < 0.25 ? 1 : 0);
+      for (let k = 0; k < arrivals; k++) this.newNetwork(rNet, w);
+      for (const net of this.nets) if (net.alive && rNet() < 0.25) this.recruit(net, rNet, 1, w);
+    }
+
+    /* mint + deliveries + sales (genuine) */
+    const batch = w + 1;
+    const plan = this.outlets.map(ou => {
+      const rr = subRng(o.seed, 'sales', w, ou.id);
+      const sales = Math.max(4, poisson(rr, ou.mean));
+      const infs = this.infs.filter(f => f.outlet === ou.id && f.active);
+      let cf = 0;
+      for (const f of infs) cf += Math.round(sales * f.share);
+      cf = Math.min(cf, sales - 2);
+      return { ou, rr, sales, cf, g: sales - cf, infs };
+    });
+    const cases = plan.map(p => Math.ceil(p.g / 12));
+    const minted = cases.reduce((a, b) => a + b, 0) * 12;
+    this.serial[batch] = 0;
+    this.emit({ t: 'MintBatch', batch, count: minted, brand: 'Kestrel', w });
+    let weekCf = 0, weekSales = 0;
+    const pendingScans = [];
+
+    plan.forEach((p, k) => {
+      const { ou, rr } = p;
+      const start = this.serial[batch];
+      for (let c = 0; c < cases[k]; c++) this.emit({ t: 'Transfer', case: `C${batch}-${Math.floor((start + c * 12) / 12)}`, to: ou.id, w });
+      this.serial[batch] += cases[k] * 12;
+      const pScan = Math.min(0.9, o.scanRate * ou.scanMult);
+      weekSales += p.sales;
+
+      /* genuine bottles */
+      for (let i = 0; i < p.g; i++) {
+        const code = codeOf(batch, start + i);
+        let where = ou;
+        if (rr() < o.informal) where = pick(rr, ou.near);
+        if (this.soldCodes.length < 6000) this.soldCodes.push({ code, outlet: ou.id });
+        else this.soldCodes[Math.floor(rr() * 6000)] = { code, outlet: ou.id };
+        if (rr() < pScan) {
+          const garbled = rr() < 0.003;
+          pendingScans.push({ code: garbled ? 'K0-0' : code, outlet: where.id, tagOpen: false, cf: false, w });
+          const repeat = rr() < (ou.bar ? 0.03 : 0.002);
+          if (repeat && !garbled) pendingScans.push({ code, outlet: where.id, tagOpen: rr() < o.closureRel, cf: false, w });
+        }
+      }
+      /* counterfeit bottles */
+      for (const f of p.infs) {
+        const net = this.nets[f.net], n = Math.round(p.sales * f.share);
+        weekCf += n;
+        for (let i = 0; i < n; i++) {
+          if (rr() >= pScan) continue;
+          if (net.method === 'fake') pendingScans.push({ code: codeOf(batch + 500, Math.floor(rr() * 1e6)), outlet: ou.id, tagOpen: false, cf: true, w, authOK: false });
+          else if (net.method === 'clone') {
+            const src = pick(rr, net.pool);
+            pendingScans.push({ code: src.code, outlet: ou.id, tagOpen: false, cf: true, w, authOK: false });
+          } else {
+            const pool = this.soldCodes.filter(s => s.outlet !== ou.id);
+            const same = rr() < 0.3 || !pool.length;
+            const src = same ? pick(rr, this.soldCodes.filter(s => s.outlet === ou.id).concat(this.soldCodes.slice(0, 1))) : pick(rr, pool);
+            if (!src) continue;
+            pendingScans.push({ code: src.code, outlet: ou.id, tagOpen: rr() < o.closureRel, cf: true, w, authOK: true });
+          }
+        }
+      }
+    });
+    weekCf = Math.min(weekCf, weekSales);
+    this.totalCfSold += weekCf;
+
+    /* consumer scans */
+    for (const s of pendingScans) this.processScan(s, regime, rNet);
+
+    /* inspections (after warm-up) */
+    let found = 0, inspected = 0;
+    if (!warm) {
+      const q = this.chooseTargets(w, regime, rInsp);
+      this.lastQueue = q;
+      for (const t of q) {
+        inspected++; this.lastInsp[t.id] = w;
+        const res = this.inspect(t.id, w, regime, rInsp);
+        t.found = !!res;
+        if (res) found++;
+        const x = this.featureVector(t.id, w);
+        if (regime === 'S3') this.train.push({ x, y: res ? 1 : 0 });
+        if (ledgerOn) this.emit({ t: 'FlagOutlet', o: t.id, found: !!res, w });
+      }
+      this.inspectionsTotal += inspected; this.foundTotal += found;
+    }
+    this.tips = new Set(); // tips regenerate each week
+    for (const f of this.infs) if (f.active && rNet() < 0.01) this.tips.add(f.outlet);
+    for (const f of this.infs) if (f.active) f.weeks++;
+
+    const cfOutlets = new Set(this.infs.filter(f => f.active).map(f => f.outlet)).size;
+    const rec = {
+      w, share: weekSales ? weekCf / weekSales : 0, cfOutlets, found, inspected,
+      cfScans: this.stats.cfScans, cfWarned: this.stats.cfWarned, gScans: this.stats.gScans, gWarned: this.stats.gWarned,
+      txs: this.pendingTx.length,
+    };
+    this.series.push(rec);
+    this.week++;
+    return rec;
+  }
+
+  newNetwork(r, w) {
+    const mix = r(), method = mix < 0.2 ? 'fake' : mix < 0.55 ? 'clone' : 'refill';
+    const net = { id: this.nets.length, method, alive: true, base: pick(r, this.outlets), pool: [], born: w };
+    if (method === 'clone') {
+      const n = 20 + Math.floor(r() * 80), local = this.soldCodes.filter(s => s.outlet === net.base.id);
+      for (let i = 0; i < n; i++) {
+        const src = (r() < 0.3 && local.length) ? pick(r, local) : pick(r, this.soldCodes);
+        net.pool.push({ code: src.code });
+      }
+    }
+    this.nets.push(net);
+    this.recruit(net, r, 3, w);
+  }
+  recruit(net, r, k, w) {
+    const taken = new Set(this.infs.filter(f => f.active && f.net === net.id).map(f => f.outlet));
+    if (taken.size >= 8) return;
+    const cand = this.outlets.filter(ou => !taken.has(ou.id) && this.d(ou, net.base) < 70 && (this.cool[ou.id] || -1) < w);
+    for (let i = 0; i < k && cand.length; i++) {
+      const wts = cand.map(ou => 1 / (0.15 + ou.scanMult));
+      let t = r() * wts.reduce((a, b) => a + b, 0), j = 0;
+      while (j < cand.length - 1 && (t -= wts[j]) > 0) j++;
+      const ou = cand.splice(j, 1)[0];
+      this.infs.push({ net: net.id, outlet: ou.id, share: 0.2 + 0.4 * r(), active: true, start: w, weeks: 0 });
+    }
+  }
+
+  processScan(s, regime, r) {
+    const rec = (res) => this.scanLog[s.outlet].push({ w: s.w, f: res.flags, strong: res.strong, shown: res.shown, cf: s.cf });
+    if (regime === 'S1') { // stamp check: code validity only
+      const p = parseCode(s.code), reg = p && this.W.batches[p.batch] && p.serial < this.W.batches[p.batch].count;
+      const fail = !reg;
+      (s.cf ? (this.stats.cfScans++, fail && this.stats.cfWarned++) : (this.stats.gScans++, fail && this.stats.gWarned++));
+      if (fail && r() < 0.2) this.tips.add(s.outlet);
+      return;
+    }
+    const res = verifyScan(this.W, s, this.vopts());
+    if (res.verdict !== 'cloned-tag') this.emit({ t: 'VerifyScan', code: s.code, o: s.outlet, tagOpen: s.tagOpen, w: s.w });
+    rec(res);
+    if (s.cf) { this.stats.cfScans++; if (res.shown && res.verdict !== 'genuine') this.stats.cfWarned++; }
+    else { this.stats.gScans++; if (res.shown && res.verdict !== 'genuine') this.stats.gWarned++; }
+  }
+
+  /* ----- features for an outlet at week t ----- */
+  pooled(t) {
+    let n = 0, c = { c1: 0, c2: 0, c3: 0, c4: 0 };
+    for (const ou of this.outlets) for (const s of this.scanLog[ou.id]) if (s.w > t - 4 && s.w <= t) {
+      n++; c.c1 += s.f.c1; c.c2 += s.f.c2; c.c3 += (s.f.c3 || s.f.c3same); c.c4 += s.f.c4;
+    }
+    n = Math.max(n, 1);
+    return { c1: c.c1 / n, c2: c.c2 / n, c3: c.c3 / n, c4: c.c4 / n };
+  }
+  featureVector(id, t) {
+    const ou = this.byId[id], m = 5, P = this._pool && this._poolT === t ? this._pool : (this._pool = this.pooled(t), this._poolT = t, this._pool);
+    const win = this.scanLog[id].filter(s => s.w > t - 4 && s.w <= t), n = win.length;
+    const cnt = k => win.reduce((a, s) => a + (k === 'c3' ? (s.f.c3 || s.f.c3same) : s.f[k]), 0);
+    const sm = (k, pr) => (cnt(k) + m * pr) / (n + m);
+    const mis = win.filter(s => s.f.c4);
+    const base = this.scanLog[id].filter(s => s.w > t - 16 && s.w <= t - 4);
+    const bm = base.length ? base.reduce((a, s) => a + s.f.c4, 0) / base.length : P.c4;
+    const dl = this.W.deliveries[id] || {};
+    let cur = 0, prev = 0, pc = 0;
+    for (let k = t - 3; k <= t; k++) cur += dl[k] || 0;
+    for (let k = t - 15; k <= t - 4; k++) if (k >= 0) { prev += dl[k] || 0; pc++; }
+    const dr = prev > 0 ? cur / 4 / (prev / Math.max(pc, 1)) : 1;
+    return [sm('c2', P.c2), Math.log1p(mis.length ? mean(mis.map(s => s.f.dist)) : 0), Math.log1p(cnt('c1')), dr, sm('c4', P.c4) - bm, sm('c4', P.c4), ou.bar ? 1 : 0, sm('c3', P.c3)];
+  }
+  strongCount(id, t) {
+    return this.scanLog[id].filter(s => s.w > t - 4 && s.w <= t).reduce((a, s) => a + (s.strong ? 1 : 0) + (s.f.c2same ? 1 : 0), 0);
+  }
+
+  /* ----- choose inspection targets ----- */
+  chooseTargets(t, regime, r) {
+    const cap = this.o.cap, picked = [], used = new Set();
+    const ok = ou => !used.has(ou.id) && (this.lastInsp[ou.id] === undefined || t - this.lastInsp[ou.id] >= 4);
+    const add = (ou, why) => { if (ok(ou) && picked.length < cap) { picked.push({ id: ou.id, why }); used.add(ou.id); } };
+    const explore = regime === 'S3' ? Math.max(1, Math.round(0.08 * cap)) : 0;
+    const main = cap - explore;
+    const addMain = (ou, why) => { if (picked.length < main) add(ou, why); };
+    this._pool = null;
+
+    let ranked = null;
+    if (regime !== 'S1') {
+      const X = this.outlets.map(ou => this.featureVector(ou.id, t));
+      if (regime === 'S2') {
+        const sc = this.outlets.map((ou, i) => {
+          const strong = this.strongCount(ou.id, t), mism = this.scanLog[ou.id].filter(s => s.w > t - 4 && s.w <= t && s.f.c4).length;
+          const n = this.scanLog[ou.id].filter(s => s.w > t - 4 && s.w <= t).length || 1;
+          const alert = strong > 0 || mism / n > 0.10;
+          return { ou, score: alert ? strong + mism : -1, i };
+        });
+        ranked = sc.filter(s => s.score >= 0).sort((a, b) => b.score - a.score || r() - 0.5);
+        ranked.forEach(s => this.lastRisk[s.ou.id] = Math.min(1, s.score / 6));
+        this.outlets.forEach(ou => { if (!(ou.id in this.lastRisk) || !ranked.find(s => s.ou === ou)) this.lastRisk[ou.id] = 0; });
+      } else {
+        const ifs = isolationScores(X, subRng(this.o.seed, 'if', t));
+        const pos = this.train.filter(s => s.y).length, neg = this.train.length - pos;
+        if (pos >= 10 && neg >= 10 && t - this.lrWeek >= 4) { this.lrModel = trainLR(this.train); this.lrWeek = t; }
+        const pi = percentiles(ifs);
+        let comb = pi;
+        if (this.lrModel) { const pl = percentiles(X.map(x => predictLR(this.lrModel, x))); comb = pi.map((v, i) => (v + pl[i]) / 2); }
+        this.outlets.forEach((ou, i) => this.lastRisk[ou.id] = comb[i]);
+        ranked = this.outlets.map((ou, i) => ({ ou, score: comb[i] })).sort((a, b) => b.score - a.score);
+      }
+      this.lastX = X;
+    }
+    if (regime !== 'S1') for (const id of this.linked) addMain(this.byId[id], 'Linked to confirmed network');
+    this.linked = new Set();
+    for (const id of this.tips) addMain(this.byId[id], regime === 'S1' ? 'Consumer report / tip-off' : 'Tip-off');
+    if (ranked) for (const s of ranked) addMain(s.ou, regime === 'S2' ? 'Rule alert' : 'ML risk rank');
+    const rest = this.outlets.filter(ok).sort(() => r() - 0.5);
+    for (const ou of rest) { if (picked.length >= main) break; add(ou, 'Random'); }
+    for (const ou of rest) { if (picked.length >= cap) break; add(ou, explore ? 'Random exploration' : 'Random'); }
+    return picked;
+  }
+
+  inspect(id, t, regime, r) {
+    const tools = (regime !== 'S1') && this.o.ledgerTools;
+    const pd = tools ? { fake: 0.95, clone: 0.85, refill: 0.85 } : { fake: 0.95, clone: 0.20, refill: 0.15 };
+    let found = false;
+    for (const f of this.infs.filter(f => f.active && f.outlet === id)) {
+      const net = this.nets[f.net];
+      if (r() < pd[net.method]) {
+        found = true; f.active = false; this.cool[id] = t + 12;
+        this.removed.push({ outlet: id, weeks: t - f.start, method: net.method });
+        if (net.method === 'clone' && regime !== 'S1') for (const g of this.infs) if (g.active && g.net === f.net) this.linked.add(g.outlet);
+        if (r() < 0.10) { net.alive = false; for (const g of this.infs) if (g.net === f.net && g.active) { g.active = false; this.removed.push({ outlet: g.outlet, weeks: t - g.start, method: net.method }); } }
+      }
+    }
+    return found;
+  }
+
+  metrics() {
+    const s = this.series, last = s.slice(-13);
+    const sc = this.stats;
+    return {
+      shareLast13: mean(last.map(x => x.share)),
+      cfBottles: this.totalCfSold,
+      inspections: this.inspectionsTotal, found: this.foundTotal,
+      hitRate: this.inspectionsTotal ? this.foundTotal / this.inspectionsTotal : 0,
+      cfWarnShare: sc.cfScans ? sc.cfWarned / sc.cfScans : 0,
+      falseWarnPer1000: sc.gScans ? 1000 * sc.gWarned / sc.gScans : 0,
+      medianRemoval: (() => { const a = this.removed.map(x => x.weeks).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : null; })(),
+    };
+  }
+
+  /* run weeks; if a chain is attached, commit each week's transactions in blocks of up to 150 */
+  async run(weeks, onWeek) {
+    for (let i = 0; i < weeks; i++) {
+      const rec = this.step();
+      if (this.chain && this.o.regime !== 'S1') {
+        const txs = this.pendingTx;
+        for (let k = 0; k < txs.length; k += 150) await this.chain.append(txs.slice(k, k + 150), rec.w);
+      }
+      if (onWeek) await onWeek(rec, this);
+    }
+  }
+}
+
+
+/* ---------- follow one bottle ----------
+   Replays the chain from the start and collects every event that touches this bottle.
+   Scan verdicts are re-derived from ledger data only, using the world state as it stood just before each scan. */
+function trail(chain, code, dist, suppressRepeat = true) {
+  const p = parseCode(code);
+  if (!p) return { valid: false, code, events: [] };
+  const cs = caseOf(p.batch, p.serial), W = new World(), events = [];
+  const opts = { sun: false, suppressRepeat, dist };
+  for (const b of chain.blocks) for (const t of b.txs) {
+    if (t.t === 'MintBatch' && t.batch === p.batch) events.push({ kind: 'mint', block: b.index, week: b.week, count: t.count, registered: p.serial < t.count });
+    else if (t.t === 'Transfer' && t.case === cs) events.push({ kind: 'transfer', block: b.index, week: b.week, to: t.to });
+    else if (t.t === 'Decommission' && t.code === code) events.push({ kind: 'decommission', block: b.index, week: b.week });
+    else if (t.t === 'VerifyScan' && t.code === code) {
+      const r = verifyScan(W, { code, outlet: t.o, tagOpen: t.tagOpen }, opts);
+      events.push({ kind: 'scan', block: b.index, week: b.week, outlet: t.o, tagOpen: t.tagOpen, verdict: r.verdict, headline: r.headline, shown: r.shown, strong: r.strong, flags: r.flags, trace: r.trace });
+    }
+    W.apply(t);
+  }
+  const b = W.bottles[code];
+  return { valid: true, code, batch: p.batch, serial: p.serial, case: cs, registered: !!(W.batches[p.batch] && p.serial < W.batches[p.batch].count),
+    custodian: W.custodian(code), scanCount: b ? b.scans.length : 0, opened: !!(b && b.opened), decommissioned: !!(b && b.decom), events };
+}
+
+/* run a fresh sim without a chain (for regime comparison) */
+function quickRun(opts, weeks) {
+  const s = new Sim(opts, null);
+  for (let i = 0; i < weeks; i++) s.step();
+  return s;
+}
+
+return { PEERS, QUORUM, REQUIRED, Chain, World, Sim, quickRun, verifyScan, trail, codeOf, caseOf, parseCode, FEATURES, DEFAULTS, mulberry32, subRng, sha256, hmac };
+})();
+if (typeof module !== 'undefined') module.exports = Engine;
+
+</script>
+<script>
+(() => {
+'use strict';
+const { Chain, Sim, quickRun, verifyScan, PEERS, QUORUM, REQUIRED, FEATURES, sha256, hmac } = Engine;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const tick = () => new Promise(r => setTimeout(r, 0));
+const short = h => h.slice(0, 8) + '…' + h.slice(-4);
+const pct = (v, d = 1) => (100 * v).toFixed(d) + '%';
+const app = { chain: null, sim: null, shown: 20, original: null, selected: -1, tamperIdx: -1 };
+
+/* ---------- tabs ---------- */
+const tabs = ['ledger', 'tap', 'trail', 'sim'];
+function setTab(name) {
+  tabs.forEach(t => { $('t-' + t).setAttribute('aria-selected', t === name); $('p-' + t).hidden = t !== name; });
+  try { history.replaceState(null, '', '#' + name); } catch (e) {}
+  if (name === 'tap') renderTapIntro();
+  if (name === 'trail') renderTrailIntro();
+}
+tabs.forEach(t => $('t-' + t).addEventListener('click', () => setTab(t)));
+$('t-ledger').parentElement.addEventListener('keydown', e => {
+  const i = tabs.findIndex(t => $('t-' + t).getAttribute('aria-selected') === 'true');
+  if (e.key === 'ArrowRight') { setTab(tabs[(i + 1) % tabs.length]); $('t-' + tabs[(i + 1) % tabs.length]).focus(); }
+  if (e.key === 'ArrowLeft') { setTab(tabs[(i + tabs.length - 1) % tabs.length]); $('t-' + tabs[(i + tabs.length - 1) % tabs.length]).focus(); }
+});
+
+/* ---------- ledger tab ---------- */
+async function renderPeers() {
+  let html = '';
+  for (const p of PEERS) {
+    const fp = (await sha256('fingerprint/' + app.chain.keys[p.id])).slice(0, 12);
+    html += `<div class="peer"><b>${p.short}</b><span class="small muted">${esc(p.name)}</span><span class="mono muted">key ${fp}</span></div>`;
+  }
+  $('peers').innerHTML = html;
+}
+function txSummary(txs) {
+  const c = {}; txs.forEach(t => c[t.t] = (c[t.t] || 0) + 1);
+  return Object.entries(c).map(([k, v]) => `<span class="chip grey">${k} ×${v}</span>`).join(' ');
+}
+function renderChain() {
+  const ch = app.chain, n = ch ? ch.blocks.length : 0;
+  const txs = ch ? ch.blocks.reduce((a, b) => a + b.txs.length, 0) : 0;
+  $('chain-stats').innerHTML = `<span class="pill">${n} blocks</span><span class="pill">${txs.toLocaleString()} transactions</span><span class="pill">quorum ${QUORUM} of ${PEERS.length}</span>`;
+  if (!ch || !n) { $('blocks').innerHTML = `<tr><td colspan="5" class="muted">No ledger yet. The stamps-only regime (S1) does not use one. Run S2 or S3 on the simulation tab.</td></tr>`; $('blocks-note').textContent = ''; $('btn-more').hidden = true; return; }
+  const from = Math.max(0, n - app.shown);
+  let rows = '';
+  for (let i = n - 1; i >= from; i--) {
+    const b = ch.blocks[i];
+    rows += `<tr class="click ${i === app.selected ? 'sel' : ''}" data-i="${i}" tabindex="0"><td class="num mono">${b.index}</td><td class="num">${b.week}</td><td>${txSummary(b.txs)}</td><td class="mono">${short(b.hash)}</td><td><div class="chips">${Object.keys(b.sigs).map(s => `<span class="chip">${s}</span>`).join('')}</div></td></tr>`;
+  }
+  $('blocks').innerHTML = rows;
+  $('blocks-note').textContent = `Showing the latest ${n - from} of ${n} blocks. Select a row to inspect it.`;
+  $('btn-more').hidden = from === 0;
+  $('blocks').querySelectorAll('tr.click').forEach(tr => {
+    const open = () => { app.selected = +tr.dataset.i; renderChain(); renderBlockDetail(); };
+    tr.addEventListener('click', open); tr.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
+  });
+  renderContracts();
+}
+function renderBlockDetail() {
+  const b = app.chain && app.chain.blocks[app.selected]; if (!b) { $('block-detail').innerHTML = ''; return; }
+  const view = { index: b.index, week: b.week, prev: b.prev, txRoot: b.txRoot, hash: b.hash, sigs: Object.fromEntries(Object.entries(b.sigs).map(([k, v]) => [k, short(v)])), txs: b.txs.slice(0, 4), moreTxs: Math.max(0, b.txs.length - 4) };
+  $('block-detail').innerHTML = `<h3 style="margin-bottom:6px">Block ${b.index}</h3><pre class="json">${esc(JSON.stringify(view, null, 2))}</pre>`;
+}
+const CONTRACTS = [
+  ['MintBatch', 'Manufacturer', 'Registers a batch of bottles and binds each closure to its excise stamp', 'MintBatch'],
+  ['TransferCustody', 'Distributors, outlets', 'Moves a case of 12 bottles to the next holder', 'Transfer'],
+  ['VerifyScan', 'Consumers via a gateway', 'Runs the four checks and records the scan', 'VerifyScan'],
+  ['Decommission', 'Empties collectors', 'Marks an empty as collected so it cannot be refilled and sold', 'Decommission'],
+  ['FlagOutlet', 'Inspectors', 'Writes each inspection outcome back as a training label', 'FlagOutlet'],
+];
+function renderContracts() {
+  const cnt = {}; (app.chain ? app.chain.blocks : []).forEach(b => b.txs.forEach(t => cnt[t.t] = (cnt[t.t] || 0) + 1));
+  $('contracts').innerHTML = CONTRACTS.map(c => `<tr><td class="mono">${c[0]}</td><td>${c[1]}<br><span class="muted small">${c[2]}</span></td><td><div class="chips">${app.chain.signersFor([{ t: c[3] }]).map(p => `<span class="chip">${p}</span>`).join('')}</div></td><td class="num">${(cnt[c[3]] || 0).toLocaleString()}</td></tr>`).join('');
+}
+function showVerify(v) {
+  $('verify-out').innerHTML = v.ok ? `<span class="pill good">Chain valid</span> ${esc(v.reason)}` : `<span class="pill bad">Chain invalid at block ${v.index}</span> ${esc(v.reason)}`;
+  if (!v.ok) { app.selected = v.index; app.shown = Math.max(app.shown, app.chain.blocks.length - v.index + 2); renderChain(); renderBlockDetail(); }
+}
+$('btn-verify').addEventListener('click', async () => { if (!app.chain) return; showVerify(await app.chain.verify()); });
+function findTransferBlock() {
+  const bl = app.chain.blocks; for (let i = bl.length - 1; i >= 0; i--) if (bl[i].txs.some(t => t.t === 'Transfer')) return i; return -1;
+}
+async function snapshot(i) { if (app.original === null) app.original = { i, json: JSON.stringify(app.chain.blocks[i]) }; }
+$('btn-tamper').addEventListener('click', async () => {
+  if (!app.chain || !app.chain.blocks.length) return;
+  const i = findTransferBlock(); if (i < 0) return; await snapshot(i);
+  const tx = app.chain.blocks[i].txs.find(t => t.t === 'Transfer'); tx.to = 'O999';
+  $('verify-out').innerHTML = `<span class="muted">Changed the recipient of case ${esc(tx.case)} in block ${i} to O999 without touching anything else.</span>`;
+  showVerify(await app.chain.verify());
+});
+$('btn-forge').addEventListener('click', async () => {
+  if (!app.chain || !app.chain.blocks.length) return;
+  const i = findTransferBlock(); if (i < 0) return; await snapshot(i);
+  const b = app.chain.blocks[i], tx = b.txs.find(t => t.t === 'Transfer'); tx.to = 'O999';
+  b.txRoot = await sha256(JSON.stringify(b.txs));
+  b.hash = await sha256(JSON.stringify({ index: b.index, week: b.week, prev: b.prev, txRoot: b.txRoot }));
+  b.sigs = { DIST: await hmac(app.chain.keys.DIST, b.hash) };
+  showVerify(await app.chain.verify());
+});
+$('btn-restore').addEventListener('click', async () => {
+  if (app.original) { app.chain.blocks[app.original.i] = JSON.parse(app.original.json); app.original = null; }
+  renderChain(); renderBlockDetail(); showVerify(await app.chain.verify());
+});
+$('btn-more').addEventListener('click', () => { app.shown += 20; renderChain(); });
+
+/* ---------- tap lab ---------- */
+const SCEN = [
+  { id: 'genuine', t: 'Genuine bottle', d: 'Sealed bottle tapped at the outlet it was delivered to.' },
+  { id: 'fake', t: 'Fake code', d: 'A counterfeit printed with a code that was never issued.' },
+  { id: 'clone', t: 'Clone, original already scanned', d: 'A copy of a genuine code on a counterfeit bottle sold at a second outlet.' },
+  { id: 'clone0', t: 'Clone of an unscanned bottle', d: 'Same copy, but the original has not been scanned yet. Try it with and without signed tags.' },
+  { id: 'cloneFirst', t: 'Clone first, honest buyer second', d: 'The copy is scanned before the genuine bottle. Who gets the warning?' },
+  { id: 'refill', t: 'Refilled bottle at another outlet', d: 'An empty from outlet A, refilled and sold at outlet B. The closure shows it was opened.' },
+  { id: 'refillSame', t: 'Refilled bottle at its own outlet', d: 'Same refill, but sold where the empty came from.' },
+  { id: 'informal', t: 'Genuine bottle lent to a neighbour', d: 'Honest informal trade: the bottle is delivered to A and sold at B.' },
+];
+let tapCtx = null, scenSel = 'genuine';
+function renderScen() {
+  $('scen').innerHTML = SCEN.map(s => `<label><input type="radio" name="scen" value="${s.id}" ${s.id === scenSel ? 'checked' : ''}><div><b>${esc(s.t)}</b><span>${esc(s.d)}</span></div></label>`).join('');
+  $('scen').querySelectorAll('input').forEach(i => i.addEventListener('change', () => { scenSel = i.value; }));
+}
+function chooseOutlets() {
+  const sim = app.sim;
+  const stock = id => sim.soldCodes.filter(s => s.outlet === id && !sim.W.bottles[s.code]);
+  const bars = sim.outlets.filter(o => o.bar && stock(o.id).length >= 6);
+  const A = bars[0] || sim.outlets.find(o => stock(o.id).length >= 6) || sim.outlets[0];
+  const cand = sim.outlets.filter(o => o !== A).map(o => [sim.d(A, o), o]).filter(x => x[0] > 35 && x[0] < 130).sort((a, b) => a[0] - b[0]);
+  const B = (cand[Math.floor(cand.length / 3)] || [0, sim.outlets[1]])[1];
+  return { A, B, dist: sim.d(A, B) };
+}
+function renderTapIntro() {
+  const warn = $('tap-warn');
+  if (!app.sim || !app.chain || app.sim.o.regime === 'S1') {
+    warn.hidden = false; warn.textContent = 'The current run used stamps only, so there is no ledger to tap against. Run S2 or S3 on the simulation tab, or reload the page.'; $('btn-tap').disabled = true; return;
+  }
+  warn.hidden = true; $('btn-tap').disabled = false;
+  tapCtx = chooseOutlets();
+  $('tap-where').textContent = `Outlet A ${tapCtx.A.id} (${tapCtx.A.bar ? 'bar' : 'shop'}), outlet B ${tapCtx.B.id} (${tapCtx.dist.toFixed(0)} km away)`;
+}
+function bottleAt(o) {
+  const sim = app.sim, c = sim.soldCodes.filter(s => s.outlet === o.id && !sim.W.bottles[s.code]);
+  return c.length ? c[Math.floor(Math.random() * c.length)].code : null;
+}
+function flagChips(f) {
+  const m = [['c0', 'tag auth'], ['c1', 'invalid code'], ['c2', 'opened'], ['c3', 'duplicate elsewhere'], ['c3same', 'repeat, same outlet'], ['c4', 'custody mismatch']];
+  const on = m.filter(([k]) => f[k]).map(([, l]) => `<span class="chip amber">${l}</span>`);
+  return on.length ? on.join(' ') : '<span class="chip grey">no flags</span>';
+}
+function planScenario(id, A, B) {
+  const code = bottleAt(A); if (!code) return null;
+  const sc = (c, o, tagOpen, authOK) => ({ code: c, outlet: o.id, tagOpen, authOK });
+  switch (id) {
+    case 'genuine': return [{ scan: sc(code, A, false), test: true }];
+    case 'fake': return [{ scan: sc('K777-4242', B, false, false), test: true }];
+    case 'clone': return [{ setup: `Genuine bottle ${code} is sold and scanned at ${A.id}.`, scan: sc(code, A, false) }, { scan: sc(code, B, false, false), test: true }];
+    case 'clone0': return [{ scan: sc(code, B, false, false), test: true }];
+    case 'cloneFirst': return [{ setup: `A counterfeit carrying the copied code ${code} is scanned at ${B.id} first.`, scan: sc(code, B, false, false) }, { scan: sc(code, A, false), test: true, honest: true }];
+    case 'refill': return [{ scan: sc(code, B, true), test: true }];
+    case 'refillSame': return [{ scan: sc(code, A, true), test: true }];
+    case 'informal': return [{ scan: sc(code, B, false), test: true }];
+  }
+}
+$('btn-tap').addEventListener('click', async () => {
+  if (!tapCtx) renderTapIntro(); if (!tapCtx) return;
+  const sim = app.sim, opts = { sun: $('opt-sun').checked, suppressRepeat: $('opt-sup').checked, dist: sim.vopts().dist };
+  const steps = planScenario(scenSel, tapCtx.A, tapCtx.B);
+  if (!steps) { $('tap-result').innerHTML = '<p class="muted">No unscanned bottle left at outlet A. Run more weeks on the simulation tab.</p>'; return; }
+  const txs = [], results = [];
+  for (const st of steps) {
+    const r = verifyScan(sim.W, st.scan, opts); results.push(r);
+    if (r.verdict !== 'cloned-tag') { const tx = { t: 'VerifyScan', code: st.scan.code, o: st.scan.outlet, tagOpen: st.scan.tagOpen, w: sim.week }; sim.W.apply(tx); txs.push(tx); }
+  }
+  let blk = null; if (txs.length) blk = await app.chain.append(txs, sim.week);
+  const last = results[results.length - 1], st = steps[steps.length - 1];
+  renderTapResult(st, last, results, steps, blk, opts);
+  renderChain(); renderContracts();
+  const fb = document.querySelector('#tap-result button[data-follow]');
+  if (fb) fb.addEventListener('click', () => { $('trail-code').value = fb.dataset.follow; setTab('trail'); renderTrail(fb.dataset.follow); });
+});
+function renderTapResult(st, r, results, steps, blk, opts) {
+  const warned = r.shown && r.verdict !== 'genuine';
+  const cls = warned ? 'bad' : (r.verdict === 'genuine' ? 'good' : 'quiet');
+  const head = warned ? r.headline : (r.verdict === 'genuine' ? 'Genuine' : 'No warning shown');
+  const sub = warned ? 'Do not buy. Report this bottle.' : (r.verdict === 'genuine' ? 'This code matches a bottle delivered to this outlet.' : 'A weak signal was logged for the regulator. ' + r.headline + '.');
+  const setup = steps.filter(s => s.setup).map((s, i) => `<p class="small muted">Setup: ${esc(s.setup)} <span class="chip ${results[i].shown && results[i].verdict !== 'genuine' ? 'red' : 'grey'}">${esc(results[i].headline)}</span></p>`).join('');
+  let insight = '';
+  if (scenSel === 'clone0' && !opts.sun && r.verdict !== 'cloned-tag') insight = 'The copy slipped through: with a static code nothing contradicts it, because the real bottle has not been scanned yet. Turn on signed tags and tap again.';
+  if (scenSel === 'clone0' && opts.sun) insight = 'The copied tag cannot produce a fresh signed message, so it fails before the ledger checks even run.';
+  if (scenSel === 'cloneFirst' && warned) insight = 'The honest buyer was warned, not the person who bought the clone. The first scan of the copy only produced a weak custody-mismatch signal. Signed tags remove this case.';
+  if (scenSel === 'cloneFirst' && opts.sun) insight = 'With signed tags the counterfeit is stopped at its first scan and never reaches the ledger, so the honest buyer is not warned.';
+  if (scenSel === 'refillSame') insight = 'A refill sold at the outlet the empty came from looks like a repeat scan, so it is not warned. The paper should say whether decommissioning empties is meant to cover this.';
+  if (scenSel === 'informal') insight = 'Honest informal trade only creates a weak signal, which is why mismatch alone must not be shown to consumers.';
+  $('tap-result').innerHTML = `
+    <div class="grid g2" style="align-items:start">
+      <div class="phone" aria-label="Consumer's phone">
+        <span class="small muted">What the consumer sees</span>
+        <div class="verdict ${cls}"><b>${esc(head)}</b><span class="small">${esc(sub)}</span></div>
+        <span class="small muted" style="margin-top:6px">What the ledger records for analytics</span>
+        <div class="chips">${flagChips(r.flags)}</div>
+      </div>
+      <div>
+        ${setup}
+        <h3 style="margin: 4px 0 4px">The checks, in order</h3>
+        <ol class="steps">${r.trace.map(t => `<li><span class="mark ${t.pass ? '' : 'no'}">${t.pass ? '✓' : '✕'}</span><div><b>${t.n === 0 ? '' : 'Check ' + t.n + ': '}${esc(t.name)}</b><span>${esc(t.detail)}</span></div></li>`).join('')}
+        ${r.trace.length < (opts.sun ? 5 : 4) ? `<li><span class="mark skip">–</span><div><b>Remaining checks skipped</b><span>A strong failure stops the sequence and warns the consumer.</span></div></li>` : ''}</ol>
+      </div>
+    </div>
+    ${insight ? `<p class="note">${esc(insight)}</p>` : ''}
+    <div class="row"><button class="btn" data-follow="${esc(st.scan.code)}">Follow this bottle</button></div>
+    ${blk ? `<p class="small muted">Written to block <b>${blk.index}</b> (week ${blk.week}), hash <span class="mono">${short(blk.hash)}</span>, signed by ${Object.keys(blk.sigs).join(', ')}.</p>` : '<p class="small muted">Nothing written: the tag failed authentication before it reached the ledger.</p>'}`;
+}
+
+
+/* ---------- follow a bottle ---------- */
+function trailReady() { return app.chain && app.sim && app.sim.o.regime !== 'S1' && app.chain.blocks.length; }
+function renderTrailIntro() {
+  if (!trailReady()) $('trail-out').innerHTML = '<div class="card"><p class="muted">There is no ledger to read. The stamps-only regime (S1) does not write one. Run S2 or S3 on the simulation tab.</p></div>';
+  else if (!$('trail-out').innerHTML.trim()) $('trail-out').innerHTML = '<div class="card"><p class="muted">Try “A scanned bottle”, or open the Ledger tab, pick a transfer block and type one of its bottle codes (case C1-149 covers K1-1788 to K1-1799).</p></div>';
+}
+function pickBottle(kind) {
+  if (!trailReady()) return renderTrailIntro();
+  const W = app.sim.W, ok = c => { const p = Engine.parseCode(c); return p && W.batches[p.batch] && p.serial < W.batches[p.batch].count; };
+  const keys = Object.keys(W.bottles).filter(c => {
+    const b = W.bottles[c]; if (!ok(c) || !b.scans.length) return false;
+    if (kind === 'multi') return new Set(b.scans.map(s => s.o)).size >= 2;
+    if (kind === 'open') return b.opened;
+    return true;
+  });
+  if (!keys.length) { $('trail-out').innerHTML = '<div class="card"><p class="muted">No bottle matches yet. Run more weeks, or use the Tap lab to create one.</p></div>'; return; }
+  const code = keys[Math.floor(Math.random() * keys.length)];
+  $('trail-code').value = code; renderTrail(code);
+}
+function goToBlock(i) { app.selected = i; app.shown = Math.max(app.shown, app.chain.blocks.length - i + 2); setTab('ledger'); renderChain(); renderBlockDetail(); const el = $('block-detail'); el.scrollIntoView({ block: 'nearest' }); }
+function renderTrail(raw) {
+  const out = $('trail-out'); if (!trailReady()) return renderTrailIntro();
+  const code = String(raw).trim().toUpperCase(), t = Engine.trail(app.chain, code, app.sim.opts_.dist, $('opt-sup').checked);
+  if (!t.valid) { out.innerHTML = '<div class="card"><p>That is not a bottle code. Codes look like <span class="mono">K1-1788</span>.</p></div>'; return; }
+  const blockLink = e => `<button class="link" data-block="${e.block}">block ${e.block}</button> · week ${e.week}`;
+  const items = t.events.map(e => {
+    if (e.kind === 'mint') return `<li class="${e.registered ? '' : 'bad'}"><span class="when">${blockLink(e)}</span><b>${e.registered ? 'Registered by MintBatch' : 'Batch exists but this serial was never issued'}</b><span class="small muted">Batch ${t.batch} holds ${e.count.toLocaleString()} bottles. The closure is bound to its excise stamp here.</span></li>`;
+    if (e.kind === 'transfer') return `<li><span class="when">${blockLink(e)}</span><b>Delivered to ${e.to}</b><span class="small muted">Case ${t.case} (12 bottles, ${t.case.replace(/C(\d+)-(\d+)/, (m, b, c) => `K${b}-${12 * c} to K${b}-${12 * c + 11}`)}) moved by TransferCustody. The ledger now says this bottle belongs at ${e.to}.</span></li>`;
+    if (e.kind === 'decommission') return `<li class="plain"><span class="when">${blockLink(e)}</span><b>Decommissioned</b><span class="small muted">The empty was collected and can no longer pass a scan.</span></li>`;
+    const warned = e.shown && e.verdict !== 'genuine', cls = warned ? 'bad' : (e.verdict === 'genuine' ? '' : 'weak');
+    const failed = e.trace.filter(x => !x.pass).map(x => x.detail).join(' ');
+    return `<li class="${cls}"><span class="when">${blockLink(e)}</span><b>Scanned at ${e.outlet}${e.tagOpen ? ', tag reported opened' : ''}</b>
+      <div class="row"><span class="chip ${warned ? 'red' : (e.verdict === 'genuine' ? '' : 'amber')}">${esc(e.headline)}</span><span class="small muted">${warned ? 'consumer warned' : (e.verdict === 'genuine' ? 'consumer sees Genuine' : 'no consumer warning')}</span></div>
+      ${failed ? `<span class="small muted">${esc(failed)}</span>` : ''}</li>`;
+  }).join('');
+  const state = [`<span class="pill ${t.registered ? 'good' : 'bad'}">${t.registered ? 'registered' : 'not registered'}</span>`,
+    t.registered ? `<span class="pill">held by ${t.custodian}</span>` : '', `<span class="pill">${t.scanCount} scan${t.scanCount === 1 ? '' : 's'}</span>`,
+    t.opened ? '<span class="pill warn">tag reported opened</span>' : '', t.decommissioned ? '<span class="pill">decommissioned</span>' : ''].join('');
+  out.innerHTML = `<div class="card"><div class="row" style="justify-content: space-between"><h2 class="mono" style="font-size:18px">${esc(t.code)}</h2><div class="row">${state}</div></div>
+    ${t.events.length ? `<ol class="tl">${items}</ol>` : '<p class="muted">Nothing in the ledger mentions this code.</p>'}
+    ${t.registered && !t.events.some(e => e.kind === 'transfer') ? '<p class="small muted">No transfer yet, so the bottle is still with the distributor.</p>' : ''}
+    <p class="small muted">Verdicts are re-derived from ledger data only, replayed in block order, using the repeat-scan setting from the Tap lab.</p></div>`;
+  out.querySelectorAll('button[data-block]').forEach(b => b.addEventListener('click', () => goToBlock(+b.dataset.block)));
+}
+$('btn-trail').addEventListener('click', () => renderTrail($('trail-code').value));
+$('trail-code').addEventListener('keydown', e => { if (e.key === 'Enter') renderTrail($('trail-code').value); });
+document.querySelectorAll('button[data-pick]').forEach(b => b.addEventListener('click', () => pickBottle(b.dataset.pick)));
+
+/* ---------- simulation tab ---------- */
+const bind = (id, out, fmt = v => v) => $(id).addEventListener('input', () => $(out).textContent = fmt($(id).value));
+bind('s-n', 'v-n'); bind('s-cap', 'v-cap'); bind('s-scan', 'v-scan'); bind('s-weeks', 'v-weeks');
+const readOpts = () => ({
+  nOutlets: +$('s-n').value, cap: +$('s-cap').value, scanRate: +$('s-scan').value / 100, seed: +$('s-seed').value || 7,
+  ledgerTools: $('s-tools').checked, sun: $('s-sun').checked, suppress: $('s-sup').checked,
+});
+const COL = { S1: 'var(--s1)', S2: 'var(--s2)', S3: 'var(--s3)' };
+const NAMES = { S1: 'S1 Stamps only', S2: 'S2 Ledger + rules', S3: 'S3 Ledger + ML' };
+function lineChart(series, warm) {
+  const W = 760, H = 280, L = 48, R = 14, T = 12, B = 34;
+  const nW = Math.max(...series.map(s => s.values.length), 2);
+  const ymax = Math.max(0.02, ...series.flatMap(s => s.values)) * 1.1;
+  const nice = (() => { const steps = [0.01, 0.02, 0.025, 0.05, 0.1, 0.2]; return steps.find(s => ymax / s <= 6) || 0.2; })();
+  const top = Math.ceil(ymax / nice) * nice;
+  const x = i => L + (W - L - R) * i / (nW - 1), y = v => T + (H - T - B) * (1 - v / top);
+  let g = '';
+  for (let v = 0; v <= top + 1e-9; v += nice) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="12">${(100 * v).toFixed(v < 0.1 ? 1 : 0)}%</text>`;
+  const stepX = nW > 30 ? 8 : 4;
+  for (let i = 0; i < nW; i += stepX) g += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" font-size="12">${i}</text>`;
+  g += `<text x="${(L + W - R) / 2}" y="${H - 0}" text-anchor="middle" font-size="12">week</text>`;
+  if (warm) g += `<rect x="${x(0)}" y="${T}" width="${x(warm) - x(0)}" height="${H - T - B}" fill="var(--surface2)" opacity="0.6"/><text x="${x(0) + 4}" y="${T + 14}" font-size="11">no counterfeiters yet</text>`;
+  const lines = series.map(s => {
+    const pts = s.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const lastI = s.values.length - 1;
+    return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round"/><circle cx="${x(lastI)}" cy="${y(s.values[lastI])}" r="3.5" fill="${s.color}"/>`;
+  }).join('');
+  $('chart').innerHTML = g + lines;
+  $('legend').innerHTML = series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('');
+}
+function smooth(a, k = 3) { return a.map((_, i) => mean(a.slice(Math.max(0, i - k + 1), i + 1))); }
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+
+function setBusy(b, text) {
+  ['btn-run', 'btn-compare'].forEach(i => $(i).disabled = b);
+  $('prog').hidden = !b; $('prog-text').textContent = text || '';
+}
+async function runLive() {
+  const o = readOpts(), regime = $('s-regime').value, weeks = +$('s-weeks').value;
+  setBusy(true, 'Running…'); $('prog').max = weeks; $('prog').value = 0;
+  app.chain = new Chain(); app.selected = -1; app.shown = 20; app.original = null; $('verify-out').textContent = '';
+  const sim = new Sim({ ...o, regime }, regime === 'S1' ? null : app.chain);
+  app.sim = sim; tapCtx = null;
+  const vals = [];
+  await sim.run(weeks, async rec => {
+    vals.push(rec.share); $('prog').value = rec.w + 1; $('prog-text').textContent = `Week ${rec.w + 1} of ${weeks}: ${rec.cfOutlets} counterfeit outlets, ${pct(rec.share)} of sales`;
+    if (rec.w % 2 === 0 || rec.w === weeks - 1) { lineChart([{ name: NAMES[regime], color: COL[regime], values: smooth(vals) }], sim.o.warmup); await tick(); }
+  });
+  $('chart-title').textContent = 'Counterfeit share of branded sales, live run (3-week average)';
+  $('chart-note').textContent = regime === 'S1' ? 'Stamps only: no ledger is written and consumers can only fail fake codes.' : `${app.chain.blocks.length} blocks written to the ledger. Open the Ledger tab to inspect and tamper with them.`;
+  renderMetricsSingle(sim, regime); renderLive(sim); renderChain(); renderPeers(); renderBlockDetail();
+  setBusy(false, `Done. ${sim.inspectionsTotal} inspections, ${sim.foundTotal} counterfeit outlets found.`);
+}
+function renderMetricsSingle(sim, regime) {
+  const m = sim.metrics();
+  $('metrics-card').hidden = false;
+  $('metrics').innerHTML = `<thead><tr><th>Outcome</th><th class="num">${NAMES[regime]}</th></tr></thead><tbody>${metricRows([m]).map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td></tr>`).join('')}</tbody>`;
+  $('metrics-read').textContent = 'Run the comparison to see the three regimes side by side on the same market.';
+}
+function metricRows(ms) { // ms: array of metrics objects -> rows with one value per column (pre-averaged elsewhere)
+  const f = (k, fmt) => fmt(ms[0][k]);
+  return [
+    ['Counterfeit share of sales, last 13 weeks', pct(ms[0].shareLast13)],
+    ['Counterfeit bottles sold', Math.round(ms[0].cfBottles).toLocaleString()],
+    ['Counterfeit outlets found', `${ms[0].found} of ${ms[0].inspections} inspections (${pct(ms[0].hitRate, 0)})`],
+    ['Median weeks from start to removal', ms[0].medianRemoval === null ? 'none removed' : ms[0].medianRemoval.toFixed(0)],
+    ['Counterfeit scans that warn the consumer', pct(ms[0].cfWarnShare, 0)],
+    ['False warnings per 1,000 genuine scans', ms[0].falseWarnPer1000.toFixed(1)],
+  ];
+}
+async function compare() {
+  const o = readOpts(), weeks = +$('s-weeks').value, reps = +$('s-reps').value, regs = ['S1', 'S2', 'S3'];
+  setBusy(true, 'Comparing…'); $('prog').max = reps * 3; $('prog').value = 0;
+  const runs = { S1: [], S2: [], S3: [] }; let done = 0;
+  for (let k = 0; k < reps; k++) for (const r of regs) {
+    runs[r].push(quickRun({ ...o, regime: r, seed: o.seed + k }, weeks));
+    $('prog').value = ++done; $('prog-text').textContent = `Run ${done} of ${reps * 3}`; await tick();
+  }
+  const series = regs.map(r => ({ name: NAMES[r], color: COL[r], values: smooth(Array.from({ length: weeks }, (_, w) => mean(runs[r].map(s => s.series[w].share)))) }));
+  lineChart(series, o.warmup || 3);
+  $('chart-title').textContent = `Counterfeit share of branded sales, mean of ${reps} run${reps > 1 ? 's' : ''} (3-week average)`;
+  $('chart-note').textContent = 'The three regimes see the same outlets, the same sales and the same counterfeiter arrivals in each run.';
+  const M = {}; regs.forEach(r => { M[r] = runs[r].map(s => s.metrics()); });
+  const avg = (r, k) => mean(M[r].map(m => m[k]));
+  const med = r => { const a = M[r].map(m => m.medianRemoval).filter(v => v !== null); return a.length ? mean(a) : null; };
+  const rows = [
+    ['Counterfeit share of sales, last 13 weeks', r => pct(avg(r, 'shareLast13'))],
+    ['Counterfeit bottles sold', r => Math.round(avg(r, 'cfBottles')).toLocaleString()],
+    ['Inspections that found a counterfeit outlet', r => pct(avg(r, 'hitRate'), 0)],
+    ['Counterfeit outlets found', r => avg(r, 'found').toFixed(0)],
+    ['Median weeks from start to removal', r => med(r) === null ? 'none' : med(r).toFixed(0)],
+    ['Counterfeit scans that warn the consumer', r => pct(avg(r, 'cfWarnShare'), 0)],
+    ['False warnings per 1,000 genuine scans', r => avg(r, 'falseWarnPer1000').toFixed(1)],
+  ];
+  $('metrics-card').hidden = false;
+  $('metrics').innerHTML = `<thead><tr><th>Outcome (mean of ${reps})</th>${regs.map(r => `<th class="num">${NAMES[r]}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr><td>${r[0]}</td>${regs.map(x => `<td class="num">${r[1](x)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  const s1 = avg('S1', 'shareLast13'), s2 = avg('S2', 'shareLast13'), s3 = avg('S3', 'shareLast13');
+  const wins = M.S3.filter((m, i) => m.shareLast13 < M.S2[i].shareLast13).length;
+  const rel = (a, b) => b > 0 ? 100 * (a - b) / b : 0;
+  let txt = `Against stamps alone, the ledger regimes cut counterfeit share by ${Math.round(-rel(s2, s1))}% (rules) and ${Math.round(-rel(s3, s1))}% (ML). `;
+  const d = rel(s3, s2);
+  txt += Math.abs(d) < 10 ? `ML targeting and rule-based alerts are within ${Math.abs(d).toFixed(0)}% of each other here (ML lower in ${wins} of ${reps} runs). At this scale, a well-behaved rule set does nearly as well as the model, which is limitation 5 in the draft.` :
+    d < 0 ? `ML targeting is ${Math.round(-d)}% lower than rule-based alerts (lower in ${wins} of ${reps} runs).` : `Rule-based alerts are ${Math.round(d)}% lower than ML targeting here (ML lower in ${wins} of ${reps} runs). The model needs labels and enough outlets to pay off; try more outlets, fewer inspections or more weeks.`;
+  $('metrics-read').textContent = txt;
+  setBusy(false, 'Done.');
+}
+function renderLive(sim) {
+  $('live-card').hidden = false;
+  const truth = $('m-truth').checked, cf = new Set(sim.infs.filter(f => f.active).map(f => f.outlet)), insp = new Set(sim.lastQueue.map(q => q.id));
+  const col = id => { const r = sim.lastRisk[id] || 0; return `color-mix(in srgb, var(--bad) ${Math.round(100 * Math.min(1, r))}%, var(--s1))`; };
+  $('map').innerHTML = sim.outlets.map(o => {
+    const base = `<circle cx="${o.x}" cy="${400 - o.y}" r="${insp.has(o.id) ? 5 : 3.2}" fill="${sim.o.regime === 'S1' ? 'var(--s1)' : col(o.id)}" ${insp.has(o.id) ? 'stroke="var(--accent)" stroke-width="2.2"' : (truth && cf.has(o.id) ? 'stroke="var(--fg)" stroke-width="1.8"' : '')}><title>${o.id} ${o.bar ? 'bar' : 'shop'}, risk ${(sim.lastRisk[o.id] || 0).toFixed(2)}</title></circle>`;
+    return base;
+  }).join('');
+  const lastW = sim.week - 1;
+  $('queue').innerHTML = sim.lastQueue.length ? sim.lastQueue.map(q => {
+    const hit = !!q.found;
+    return `<tr><td class="mono">${q.id}</td><td>${esc(q.why)}</td><td>${hit ? '<span class="chip red">counterfeit found</span>' : '<span class="chip grey">clean or missed</span>'}</td></tr>`;
+  }).join('') : '<tr><td colspan="3" class="muted">No inspections yet.</td></tr>';
+  if (sim.lrModel) {
+    const w = sim.lrModel.w, mx = Math.max(...w.map(Math.abs), 0.1);
+    $('weights').innerHTML = FEATURES.map((n, i) => ({ n, v: w[i] })).sort((a, b) => Math.abs(b.v) - Math.abs(a.v)).map(r =>
+      `<div class="bar"><span>${r.n}</span><div class="track"><i style="${r.v >= 0 ? `left:50%; width:${50 * r.v / mx}%; background: var(--bad)` : `right:50%; width:${50 * -r.v / mx}%; background: var(--s1)`}"></i></div><span class="mono">${r.v >= 0 ? '+' : ''}${r.v.toFixed(2)}</span></div>`).join('') +
+      `<p class="small muted" style="margin-top:6px">Standardised logistic-regression weights, trained on ${sim.train.length} inspection outcomes. Red raises risk, grey lowers it.</p>`;
+  } else {
+    const pos = sim.train.filter(s => s.y).length;
+    $('weights').innerHTML = `<p class="small muted">${sim.o.regime === 'S3' ? `Learning starts once there are 10 positive and 10 negative inspection labels. So far: ${pos} positive, ${sim.train.length - pos} negative. Until then the unsupervised anomaly score ranks outlets.` : 'Only the S3 regime learns from inspection outcomes.'}</p>`;
+  }
+}
+$('m-truth').addEventListener('change', () => { if (app.sim && !$('live-card').hidden) renderLive(app.sim); });
+$('btn-run').addEventListener('click', runLive);
+$('btn-compare').addEventListener('click', compare);
+
+/* ---------- boot ---------- */
+(async () => {
+  app.chain = new Chain(); await app.chain.ready;
+  app.sim = new Sim({ regime: 'S3', nOutlets: 300, cap: 6, seed: 7 }, app.chain);
+  await app.sim.run(3);
+  renderScen(); await renderPeers(); renderChain(); renderContracts();
+  const h = (location.hash || '').slice(1); if (tabs.includes(h)) setTab(h);
+  if (h === 'tap') renderTapIntro();
+})();
+})();
+</script>

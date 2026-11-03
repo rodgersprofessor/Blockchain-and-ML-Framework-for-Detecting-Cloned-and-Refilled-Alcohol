@@ -1,0 +1,17 @@
+comparison,metric,relative_change_pct,ci_low,ci_high,share_of_replications_better
+S1 Excise stamps vs S0 No system,penetration_y2,-9.9,-14.0,-5.9,0.83
+S1 Excise stamps vs S0 No system,cf_bottles_total,-10.7,-14.0,-7.5,0.83
+S1 Excise stamps vs S0 No system,median_weeks_to_removal,-7.8,-18.2,2.6,0.53
+S1 Excise stamps vs S0 No system,hit_rate,16.8,11.0,22.6,0.87
+S2 Blockchain (rules) vs S1 Excise stamps,penetration_y2,-83.7,-85.1,-82.4,1.0
+S2 Blockchain (rules) vs S1 Excise stamps,cf_bottles_total,-77.9,-79.4,-76.5,1.0
+S2 Blockchain (rules) vs S1 Excise stamps,median_weeks_to_removal,-89.5,-90.7,-88.2,0.87
+S2 Blockchain (rules) vs S1 Excise stamps,hit_rate,112.2,100.5,123.9,1.0
+S3 Blockchain + ML vs S1 Excise stamps,penetration_y2,-94.0,-94.3,-93.6,1.0
+S3 Blockchain + ML vs S1 Excise stamps,cf_bottles_total,-90.1,-90.6,-89.5,1.0
+S3 Blockchain + ML vs S1 Excise stamps,median_weeks_to_removal,-95.1,-95.7,-94.5,0.87
+S3 Blockchain + ML vs S1 Excise stamps,hit_rate,127.9,116.9,138.9,1.0
+S3 Blockchain + ML vs S2 Blockchain (rules),penetration_y2,-61.9,-64.4,-59.4,1.0
+S3 Blockchain + ML vs S2 Blockchain (rules),cf_bottles_total,-54.2,-56.6,-51.8,1.0
+S3 Blockchain + ML vs S2 Blockchain (rules),median_weeks_to_removal,-53.2,-55.8,-50.6,1.0
+S3 Blockchain + ML vs S2 Blockchain (rules),hit_rate,8.6,3.1,14.1,0.73

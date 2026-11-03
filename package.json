@@ -1,0 +1,14 @@
+{
+  "name": "alcohol-provenance-framework",
+  "version": "1.0.0",
+  "description": "Code accompanying 'Securing Records, Not Products': an agent-based simulation (alcohol_abm/) and an interactive demo with test suite (bottle-ledger-demo/) for a permissioned-blockchain and machine-learning framework against cloned and refilled alcohol.",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "node bottle-ledger-demo/scripts/build.js",
+    "test": "node --test bottle-ledger-demo/test/engine.test.js",
+    "compare": "node bottle-ledger-demo/scripts/compare.js",
+    "start": "node bottle-ledger-demo/scripts/serve.js"
+  }
+}

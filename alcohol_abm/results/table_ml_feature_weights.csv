@@ -1,0 +1,9 @@
+,mean_coef,sd
+opened_tag_rate,1.15,0.18
+mismatch_distance,1.03,0.14
+invalid_codes,0.92,0.23
+delivery_ratio,-0.61,0.1
+mismatch_change,0.27,0.05
+mismatch_rate,-0.26,0.06
+is_bar,-0.11,0.07
+duplicate_rate,0.05,0.06
